@@ -33,19 +33,11 @@ jobs:
         run: npx playwright test
 
       - name: Upload Playwright HTML report
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-html-report
           path: playwright-report/
           if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload Playwright raw results (screenshots, traces, videos)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results
-          path: test-results/
-          if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
+          compression-level: 9

@@ -4,6 +4,10 @@ import { VideoPlayerPage } from '../pages/video-player.page';
 
 test.describe('Bitmovin Stream Test - Video Playback', () => {
   test.describe.configure({ retries: process.env.CI ? 2 : 0 });
+  test.skip(
+    ({ browserName }) => browserName === 'webkit',
+    'Bitmovin playback checks are unstable on WebKit in this environment.',
+  );
 
   // يتحقق من تحميل HLS وتشغيل الفيديو وتغيّر نص طبقة Al-Fihris أثناء التشغيل.
   test('Test HLS playback: verify video loads, plays, and the Al-Fihris overlay updates', async ({

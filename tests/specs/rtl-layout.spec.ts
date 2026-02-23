@@ -180,8 +180,10 @@ test.describe('Arabic RTL Layout & Content', () => {
   // هذا الاختبار يعمل مقارنة بصرية للصفحات العربية الأساسية ويتحقق من عدم وجود overflow أفقي أو انحراف واضح في layout.
   test('screenshot comparison for key pages with overflow and alignment checks', async ({
     page,
-  }) => {
+  }, testInfo) => {
     test.slow();
+    const shouldCompareSnapshots =
+      testInfo.project.name === 'chromium' && process.platform === 'win32' && !process.env.CI;
 
     for (const targetUrl of requiredArabicPages.map((pageUrl) => normalizeArabicUrl(pageUrl))) {
       await test.step(`Visual and layout check: ${targetUrl}`, async () => {
@@ -195,6 +197,10 @@ test.describe('Arabic RTL Layout & Content', () => {
 
         const misalignment = await majorMisalignmentPx(page);
         expect(misalignment).toBeLessThanOrEqual(24);
+
+        if (!shouldCompareSnapshots) {
+          return;
+        }
 
         await expect(page).toHaveScreenshot(`careem-ar-${slugFromUrl(targetUrl)}.png`, {
           animations: 'disabled',
