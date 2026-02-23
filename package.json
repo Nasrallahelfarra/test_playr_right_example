@@ -1,0 +1,32 @@
+{
+  "name": "test_playrright",
+  "version": "1.0.0",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --project=chromium --headed",
+    "e2e:ui": "playwright test --ui",
+    "test:video": "playwright test tests/specs/video-playback.spec.ts",
+    "test:offline": "playwright test tests/specs/offline-sync.spec.ts",
+    "test:anti-cheat": "playwright test tests/specs/timed-exam.spec.ts",
+    "test:rtl": "playwright test tests/specs/rtl-layout.spec.ts",
+    "test:sequential": "npm run test:video && npm run test:offline && npm run test:anti-cheat && npm run test:rtl",
+    "test:video:chromium": "playwright test tests/specs/video-playback.spec.ts --project=chromium",
+    "test:offline:chromium": "playwright test tests/specs/offline-sync.spec.ts --project=chromium",
+    "test:anti-cheat:chromium": "playwright test tests/specs/timed-exam.spec.ts --project=chromium",
+    "test:rtl:chromium": "playwright test tests/specs/rtl-layout.spec.ts --project=chromium",
+    "test:sequential:chromium": "npm run test:video:chromium && npm run test:offline:chromium && npm run test:anti-cheat:chromium && npm run test:rtl:chromium",
+    "show-report": "playwright show-report"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}
