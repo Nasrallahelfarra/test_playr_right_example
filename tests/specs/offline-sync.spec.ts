@@ -1,207 +1,195 @@
-// ─── Imports | الاستيرادات ────────────────────────────────────────────────────
-// Playwright core: expect for assertions, test as the runner.
-// أدوات Playwright الأساسية: expect للتحقق، test لتشغيل الاختبارات.
-import { expect, test } from '@playwright/test';
+// Imports needed for assertions and test runner.
+// الاستيرادات اللازمة للتحقق وتشغيل الاختبارات.
+import { expect, test, type Page } from '@playwright/test';
 
-// Node.js path utilities to build absolute paths to local fixture HTML files.
-// أدوات مسارات Node.js لبناء مسارات مطلقة لملفات HTML التجريبية المحلية.
-import { resolve } from 'path';
-import { pathToFileURL } from 'url';
+// Local app bootstrap and shared constants.
+// تجهيز التطبيق المحلي والثوابت المشتركة.
+import { installLocalEducationalRoutes, testData } from '../fixtures/test-data';
 
-// ─── URLs | الروابط ───────────────────────────────────────────────────────────
-// External PWA tester tool used to simulate offline/online transitions.
-// أداة اختبار PWA الخارجية المستخدمة لمحاكاة الانتقال بين الأونلاين والأوفلاين.
-const pwaOfflineTesterUrl = 'https://mobiview.github.io/pwa-offline-tester';
+// Page objects used for navigation and quiz sync interactions.
+// كائنات الصفحات المستخدمة للتنقل والتفاعل مع مزامنة الاختبار.
+import { DashboardPage } from '../pages/dashboard.page';
+import { LoginPage } from '../pages/login.page';
+import { QuizPage } from '../pages/quiz.page';
 
-// The Bitmovin stream-test demo loaded inside the PWA tester's iframe.
-// صفحة Bitmovin التجريبية التي يتم تحميلها داخل iframe الخاص بأداة PWA.
-const bitmovinStreamTestUrl = 'https://bitmovin.com/demos/stream-test';
+// Helper function to navigate to the quiz lab page.
+// دالة مساعدة للانتقال إلى صفحة مختبر الاختبار.
+// Logs in as the first test student, navigates to dashboard, then opens the quiz page.
+// تسجل الدخول كأول طالب اختبار، تنتقل إلى اللوحة، ثم تفتح صفحة الاختبار.
+async function openQuizLab(page: Page): Promise<QuizPage> {
+  // Create instances of all required page objects.
+  // إنشاء نسخ من جميع كائنات الصفحات المطلوبة.
+  const loginPage = new LoginPage(page);
+  const dashboardPage = new DashboardPage(page);
+  const quizPage = new QuizPage(page);
 
-// ─── Helper | مساعد ──────────────────────────────────────────────────────────
-// Converts a local fixture HTML filename into a file:// URL the browser can load.
-// يحوّل اسم ملف HTML محلي إلى رابط file:// يمكن للمتصفح تحميله.
-function fixturePageUrl(fileName: string): string {
-  const fullPath = resolve(__dirname, '..', 'fixtures', 'pages', fileName);
-  return pathToFileURL(fullPath).toString();
+  // Navigate to login page and authenticate.
+  // الانتقال إلى صفحة تسجيل الدخول والمصادقة.
+  await loginPage.goto();
+  await loginPage.loginAs(testData.students[0].id);
+
+  // Wait for dashboard to load, then click quiz navigation link.
+  // انتظار تحميل اللوحة، ثم النقر على رابط التنقل للاختبار.
+  await dashboardPage.assertLoaded();
+  await dashboardPage.openQuiz();
+
+  // Return the quiz page object for further interactions.
+  // إرجاع كائن صفحة الاختبار لمزيد من التفاعلات.
+  return quizPage;
 }
 
-// ─── Test Suite | مجموعة الاختبارات ──────────────────────────────────────────
-// Groups all offline-mode transition tests under one labelled suite.
-// يجمع جميع اختبارات انتقال الوضع الأوفلاين تحت مجموعة واحدة موسومة.
-test.describe('Offline Mode Transitions', () => {
-
-  // ── Test 1: Network Drop Mid-Session | اختبار انقطاع الشبكة أثناء الجلسة ──
-  // Loads Bitmovin inside the PWA Offline Tester, cuts the network, and verifies:
-  //   - The offline indicator updates correctly.
-  //   - The cached content (iframe) remains visible with no crash.
-  //   - Restoring the network brings the indicator back to "online".
-  // يحمّل Bitmovin داخل PWA Tester، يقطع الشبكة، ويتحقق من:
-  //   - تحديث مؤشر الأوفلاين بشكل صحيح.
-  //   - بقاء المحتوى المحفوظ (iframe) ظاهرًا دون تعطّل.
-  //   - عودة المؤشر إلى "online" بعد استعادة الشبكة.
-  test('simulate network drop mid-session with PWA tester + Bitmovin stream', async ({
-    page,
-    context,
-  }) => {
-    // Mark this test as slow — external pages and network toggling take extra time.
-    // وضع علامة "بطيء" على هذا الاختبار لأن الصفحات الخارجية وتبديل الشبكة تستغرق وقتًا إضافيًا.
-    test.slow();
-
-    // Open the PWA Offline Tester tool and wait for its URL input to appear.
-    // فتح أداة PWA Offline Tester والانتظار حتى يظهر حقل إدخال الرابط.
-    await page.goto(pwaOfflineTesterUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-    await expect(page.locator('#pwaUrlInput')).toBeVisible();
-
-    // Type the Bitmovin stream URL into the input and click "Load App".
-    // كتابة رابط Bitmovin في الحقل والنقر على "Load App".
-    await page.fill('#pwaUrlInput', bitmovinStreamTestUrl);
-    await page.getByRole('button', { name: 'Load App' }).click();
-
-    // Confirm the iframe src was set to the Bitmovin demo URL.
-    // التأكد من أن src الـ iframe تم ضبطه على رابط Bitmovin.
-    const streamFrame = page.locator('#pwaFrame');
-    await expect(streamFrame).toHaveAttribute('src', /bitmovin\.com\/demos\/stream-test/i);
-
-    // Verify the network label shows "online" before cutting the connection.
-    // التأكد من أن مؤشر الشبكة يعرض "online" قبل قطع الاتصال.
-    await expect(page.locator('#networkLabel')).toHaveText(/online/i);
-
-    // Use Playwright's context.setOffline(true) to simulate a real network drop.
-    // استخدام context.setOffline(true) لمحاكاة انقطاع الشبكة الفعلي.
-    await context.setOffline(true);
-
-    // Poll navigator.onLine via page.evaluate() to confirm the browser sees offline.
-    // الاستعلام عن navigator.onLine عبر page.evaluate() للتأكد من رؤية المتصفح للوضع الأوفلاين.
-    await expect.poll(async () => page.evaluate(() => navigator.onLine)).toBe(false);
-
-    // Click the UI toggle to reflect the new offline state in the app's indicators.
-    // النقر على زر التبديل في الواجهة ليعكس حالة الأوفلاين في مؤشرات التطبيق.
-    await page.locator('#toggleNetwork').click();
-
-    // Assert the network label now shows "offline".
-    // التأكد من أن مؤشر الشبكة يعرض الآن "offline".
-    await expect(page.locator('#networkLabel')).toHaveText(/offline/i);
-
-    // Assert the preview container received the "offline-mode" CSS class.
-    // التأكد من أن حاوية المعاينة حصلت على CSS class "offline-mode".
-    await expect(page.locator('#previewContainer')).toHaveClass(/offline-mode/);
-
-    // The main workspace must still be visible — no crash or blank screen.
-    // يجب أن تظل مساحة العمل الرئيسية ظاهرة — لا تعطّل ولا شاشة فارغة.
-    await expect(page.locator('#mainWorkspace')).toBeVisible();
-
-    // The Bitmovin iframe must remain visible (cached content still accessible).
-    // يجب أن يظل iframe Bitmovin ظاهرًا (المحتوى المخزّن مؤقتًا لا يزال متاحًا).
-    await expect(streamFrame).toBeVisible();
-
-    // Restore the network connection using context.setOffline(false).
-    // استعادة الاتصال بالشبكة باستخدام context.setOffline(false).
-    await context.setOffline(false);
-
-    // Confirm the browser's navigator.onLine is back to true.
-    // التأكد من أن navigator.onLine في المتصفح عاد إلى true.
-    await expect.poll(async () => page.evaluate(() => navigator.onLine)).toBe(true);
-
-    // Click the toggle again to reflect the restored online state in the UI.
-    // النقر على زر التبديل مجددًا ليعكس استعادة الاتصال في الواجهة.
-    await page.locator('#toggleNetwork').click();
-
-    // Assert the network label is back to "online".
-    // التأكد من أن مؤشر الشبكة عاد إلى "online".
-    await expect(page.locator('#networkLabel')).toHaveText(/online/i);
+// ─── Test Suite: Offline Mode Transitions | مجموعة اختبارات: انتقالات الوضع اللاأونلاين ─────
+// Tests network drop mid-session and offline quiz submission with sync verification.
+// تختبر انقطاع الشبكة أثناء الجلسة وإرسال الاختبار اللاأونلاين مع التحقق من المزامنة.
+test.describe('Offline Mode Transitions (Local-Only)', () => {
+  // Install local mock routes before each test to simulate the educational platform.
+  // تثبيت المسارات المحلية الوهمية قبل كل اختبار لمحاكاة منصة التعليم.
+  test.beforeEach(async ({ context }) => {
+    await installLocalEducationalRoutes(context);
   });
 
-  // ── Test 2: Offline Quiz Submission + Sync | إرسال الاختبار أوفلاين ثم المزامنة ─
-  // Submits a quiz answer while offline, restores the network, then verifies:
-  //   - The sync indicator transitions: queued → syncing → synced.
-  //   - The server-side state matches the submitted answer.
-  // يرسل إجابة الاختبار في وضع أوفلاين، يستعيد الشبكة، ثم يتحقق من:
-  //   - انتقال مؤشر المزامنة: queued → syncing → synced.
-  //   - تطابق حالة الخادم مع الإجابة المرسلة.
-  test('submit quiz answer offline then restore network and verify sync completion', async ({
+  // Simulate network drop using context.setOffline(true) and verify UI survives.
+  // محاكاة انقطاع الشبكة باستخدام setOffline(true) والتأكد من بقاء الواجهة مستقرة.
+  test('simulate network drop mid-session: offline indicator, no crash, cached content visible', async ({
     page,
     context,
   }) => {
-    // Load the local offline-sync fixture page (simulates a quiz with sync logic).
-    // تحميل صفحة fixture المحلية للمزامنة الأوفلاين (تحاكي اختبارًا مع منطق مزامنة).
-    await page.goto(fixturePageUrl('offline-sync-lab.html'));
+    // Navigate to quiz lab page.
+    // الانتقال إلى صفحة مختبر الاختبار.
+    const quizPage = await openQuizLab(page);
 
-    // Verify the app starts in the "online" state before going offline.
-    // التأكد من أن التطبيق يبدأ في حالة "online" قبل الانتقال للأوفلاين.
-    await expect(page.locator('#offline-indicator')).toHaveAttribute('data-state', 'online');
+    // Assert initial state is online.
+    // التأكد من أن الحالة الأولية هي أونلاين.
+    expect(await quizPage.getOfflineState()).toBe('online');
 
-    // Select the "HLS" answer option in the quiz form.
-    // تحديد خيار الإجابة "HLS" في نموذج الاختبار.
-    await page.locator('input[data-testid="answer-option"][value="HLS"]').check();
+    // Simulate network disconnection using Playwright's context.setOffline().
+    // محاكاة انقطاع الشبكة باستخدام context.setOffline() من Playwright.
+    await context.setOffline(true);
 
-    // Cut the network with Playwright's context.setOffline(true).
-    // قطع الشبكة باستخدام context.setOffline(true) من Playwright.
+    // Verify navigator.onLine is false via page.evaluate().
+    // التحقق من أن navigator.onLine هو false عبر page.evaluate().
+    await expect.poll(async () => page.evaluate(() => navigator.onLine)).toBe(false);
+
+    // Assert offline indicator shows "offline" state.
+    // التأكد من أن مؤشر اللاأونلاين يعرض حالة "offline".
+    expect(await quizPage.getOfflineState()).toBe('offline');
+
+    // Assert app health indicator shows "stable" (no crash).
+    // التأكد من أن مؤشر صحة التطبيق يعرض "stable" (لا يوجد انهيار).
+    await expect(page.locator('#app-health')).toHaveAttribute('data-state', 'stable');
+
+    // Assert cached content is visible (UI survives offline mode).
+    // التأكد من أن المحتوى المخزن مؤقتًا مرئي (الواجهة تنجو من الوضع اللاأونلاين).
+    await expect(page.locator('#cached-content')).toBeVisible();
+
+    // Restore network connection.
+    // استعادة اتصال الشبكة.
+    await context.setOffline(false);
+
+    // Verify navigator.onLine is true again.
+    // التحقق من أن navigator.onLine أصبح true مرة أخرى.
+    await expect.poll(async () => page.evaluate(() => navigator.onLine)).toBe(true);
+
+    // Assert offline indicator returns to "online" state.
+    // التأكد من أن مؤشر اللاأونلاين يعود إلى حالة "online".
+    expect(await quizPage.getOfflineState()).toBe('online');
+  });
+
+  // Submit while offline, restore network, then assert queued -> syncing -> synced and server match.
+  // إرسال إجابة أثناء الأوفلاين ثم استعادة الشبكة والتحقق من تسلسل الحالات ومطابقة الخادم.
+  test('submit quiz while offline then reconnect: assert sync completes and server state matches', async ({
+    page,
+    context,
+  }) => {
+    // Navigate to quiz lab page.
+    // الانتقال إلى صفحة مختبر الاختبار.
+    const quizPage = await openQuizLab(page);
+
+    // Select an answer option.
+    // اختيار خيار إجابة.
+    await quizPage.selectAnswer('HLS');
+
+    // Disconnect network before submitting.
+    // قطع الشبكة قبل الإرسال.
     await context.setOffline(true);
     await expect.poll(async () => page.evaluate(() => navigator.onLine)).toBe(false);
 
-    // Assert the offline indicator reacted to the network drop.
-    // التأكد من أن مؤشر الأوفلاين تفاعل مع انقطاع الشبكة.
-    await expect(page.locator('#offline-indicator')).toHaveAttribute('data-state', 'offline');
+    // Submit answer while offline.
+    // إرسال الإجابة أثناء اللاأونلاين.
+    await quizPage.submitAnswer();
 
-    // Submit the quiz answer while the network is still offline.
-    // إرسال إجابة الاختبار بينما الشبكة لا تزال مقطوعة.
-    await page.getByRole('button', { name: 'Submit Answer' }).click();
+    // Assert sync state is "queued" (waiting for network).
+    // التأكد من أن حالة المزامنة هي "queued" (في انتظار الشبكة).
+    expect(await quizPage.getSyncState()).toBe('queued');
 
-    // Assert the sync indicator moved to "queued" — answer is saved locally.
-    // التأكد من انتقال مؤشر المزامنة إلى "queued" — الإجابة محفوظة محليًا.
-    await expect(page.locator('#sync-indicator')).toHaveAttribute('data-state', 'queued');
-
-    // Restore the network connection.
-    // استعادة الاتصال بالشبكة.
+    // Restore network connection.
+    // استعادة اتصال الشبكة.
     await context.setOffline(false);
     await expect.poll(async () => page.evaluate(() => navigator.onLine)).toBe(true);
 
-    // Poll the window.__syncLabState object to confirm "syncing" was recorded.
-    // الاستعلام عن window.__syncLabState للتأكد من تسجيل حالة "syncing".
+    // Wait for sync history to include "syncing" state.
+    // انتظار سجل المزامنة ليتضمن حالة "syncing".
     await expect
-      .poll(async () => {
-        return page.evaluate(() => {
-          const extendedWindow = window as Window & {
-            __syncLabState?: { syncHistory: string[] };
-          };
-          return extendedWindow.__syncLabState?.syncHistory.includes('syncing') ?? false;
-        });
-      })
+      .poll(async () => (await quizPage.readSyncHistory()).includes('syncing'))
       .toBe(true);
 
-    // Assert the sync indicator reaches "synced" within 10 s of network restoration.
-    // التأكد من وصول مؤشر المزامنة إلى "synced" خلال 10 ثوانٍ من استعادة الشبكة.
-    await expect(page.locator('#sync-indicator')).toHaveAttribute('data-state', 'synced', {
-      timeout: 10_000,
-    });
+    // Wait for sync to complete (state becomes "synced").
+    // انتظار اكتمال المزامنة (تصبح الحالة "synced").
+    await quizPage.expectSynced();
 
-    // Read the full sync lab state object from the page's global scope.
-    // قراءة كائن الحالة الكامل من النطاق العام للصفحة.
-    const syncedState = await page.evaluate(() => {
-      const extendedWindow = window as Window & {
-        __syncLabState?: {
-          server: { submissions: Array<{ answer: string; submittedAt: string }> };
-          syncHistory: string[];
-        };
-      };
-      return extendedWindow.__syncLabState ?? null;
-    });
+    // Read server state and verify submission was received.
+    // قراءة حالة الخادم والتحقق من استلام الإرسال.
+    const server = await quizPage.readServerState();
+    expect(server.submissions.length).toBeGreaterThan(0);
 
-    // State object must exist — confirms the fixture initialised correctly.
-    // كائن الحالة يجب أن يكون موجودًا — يؤكد أن fixture تهيّأت بشكل صحيح.
-    expect(syncedState).not.toBeNull();
+    // Assert last submission matches the answer we sent.
+    // التأكد من أن آخر إرسال يطابق الإجابة التي أرسلناها.
+    expect(server.submissions.at(-1)?.answer).toBe('HLS');
+  });
 
-    // At least one submission must have reached the server after sync.
-    // يجب أن تصل إجابة واحدة على الأقل إلى الخادم بعد المزامنة.
-    expect(syncedState!.server.submissions.length).toBeGreaterThan(0);
+  // Explicit PowerSync indicator verification: syncing then synced in order.
+  // تحقق صريح من مؤشر PowerSync: ظهور syncing ثم synced بالترتيب.
+  test('verify PowerSync indicator reflects syncing -> synced states', async ({
+    page,
+    context,
+  }) => {
+    // Navigate to quiz lab page.
+    // الانتقال إلى صفحة مختبر الاختبار.
+    const quizPage = await openQuizLab(page);
 
-    // The last submission's answer must match what we selected ("HLS").
-    // إجابة آخر إرسال يجب أن تطابق ما اخترناه ("HLS").
-    expect(syncedState!.server.submissions.at(-1)?.answer).toBe('HLS');
+    // Select an answer option.
+    // اختيار خيار إجابة.
+    await quizPage.selectAnswer('MP4');
 
-    // Sync history must contain both "syncing" and "synced" states in order.
-    // سجل المزامنة يجب أن يحتوي على حالتَي "syncing" و"synced" بالترتيب.
-    expect(syncedState!.syncHistory).toContain('syncing');
-    expect(syncedState!.syncHistory).toContain('synced');
+    // Disconnect network and submit answer.
+    // قطع الشبكة وإرسال الإجابة.
+    await context.setOffline(true);
+    await quizPage.submitAnswer();
+
+    // Assert sync state is "queued".
+    // التأكد من أن حالة المزامنة هي "queued".
+    expect(await quizPage.getSyncState()).toBe('queued');
+
+    // Restore network and wait for sync to complete.
+    // استعادة الشبكة وانتظار اكتمال المزامنة.
+    await context.setOffline(false);
+    await quizPage.expectSynced();
+
+    // Read sync history from global __syncLabState object.
+    // قراءة سجل المزامنة من كائن __syncLabState العام.
+    const history = await quizPage.readSyncHistory();
+
+    // Find indices of "syncing" and "synced" states in history.
+    // إيجاد فهارس حالات "syncing" و"synced" في السجل.
+    const syncingIndex = history.indexOf('syncing');
+    const syncedIndex = history.lastIndexOf('synced');
+
+    // Assert "syncing" state was logged.
+    // التأكد من تسجيل حالة "syncing".
+    expect(syncingIndex).toBeGreaterThan(-1);
+
+    // Assert "synced" state came after "syncing" (correct order).
+    // التأكد من أن حالة "synced" جاءت بعد "syncing" (الترتيب الصحيح).
+    expect(syncedIndex).toBeGreaterThan(syncingIndex);
   });
 });

@@ -1,48 +1,65 @@
-# Playwright E2E Test Suite
+# Playwright E2E Test Suite (Local-Only)
 
-Automated end-to-end tests for:
+Automated end-to-end tests for an educational platform test framework, fully local and deterministic.
 
-- Video playback reliability (Bitmovin player)
-- Offline/online synchronization flows
-- Timed exam anti-cheat behavior
-- Arabic RTL layout and content validation
+## What Is Covered
 
-This repository is focused on realistic browser-level checks for learning/product UX flows, using Playwright with reusable page objects and local test fixtures.
+### 1) Video Player Automation
+File: `tests/specs/video-playback.spec.ts`
 
-## Test Coverage
+- HLS playback load/start verification
+- Resume playback from cached timestamp after navigation
+- Audio Focus Mode checks (audio/time continues, logical video track flag changes)
+- Media state validation via `page.evaluate()` on `HTMLVideoElement` (`currentTime`, `paused`, `readyState`, `duration`)
 
-### 1) Video playback (`tests/specs/video-playback.spec.ts`)
-- HLS playback load/start validation
-- Resume playback after navigation away/back
-- Audio Focus Mode assertions (when available)
+### 2) Offline Mode Transitions
+File: `tests/specs/offline-sync.spec.ts`
 
-### 2) Offline sync (`tests/specs/offline-sync.spec.ts`)
-- Simulated network drop and restore
-- Queueing an answer while offline
-- Verifying sync completion after reconnect
+- Network drop/restore with `context.setOffline(true/false)`
+- Offline indicator and no-crash guard checks
+- Submit quiz answer while offline, then sync on reconnect
+- PowerSync-style UI indicator flow: `queued -> syncing -> synced`
 
-### 3) Timed anti-cheat exam (`tests/specs/timed-exam.spec.ts`)
-- Countdown visibility and decrement checks
-- `visibilitychange` logging and persistence
+### 3) Timed Exam Anti-Cheat
+File: `tests/specs/timed-exam.spec.ts`
+
+- Countdown visibility and decrement verification
+- Tab switch simulation via `visibilitychange`
+- Timer continuity after close/reopen (server-side persisted start time behavior)
 - Auto-submission on timer expiry
 
-### 4) Arabic RTL layout (`tests/specs/rtl-layout.spec.ts`)
-- `dir="rtl"` and Arabic locale checks across discovered pages
-- Overflow/alignment guardrails for key pages
-- Arabic text rendering checks in local RTL fixture
-- Optional visual snapshot comparison in local Chromium on Windows
+### 4) Arabic RTL Layout and Content
+File: `tests/specs/rtl-layout.spec.ts`
+
+- `dir="rtl"` and Arabic `lang` checks on Arabic locale pages
+- Screenshot comparisons for key RTL pages
+- Overflow/alignment assertions
+- Arabic content rendering checks (quiz/chatbot/Al-Fihris)
+
+## Local-Only Architecture
+
+- No external websites are required.
+- Local app routes are installed through `installLocalEducationalRoutes(context)` in `tests/fixtures/test-data.ts`.
+- Route origin: `http://edu.local`
+- Main routes:
+  - `/login`
+  - `/dashboard`
+  - `/video`
+  - `/quiz`
+  - `/exam`
+  - `/ar`, `/ar/quiz`, `/ar/chatbot`, `/ar/video`
 
 ## Tech Stack
 
 - Node.js + npm
 - TypeScript
 - Playwright Test (`@playwright/test`)
-- GitHub Actions CI
+- GitHub Actions
 
 ## Prerequisites
 
-- Node.js 20+ (CI currently runs on Node 20)
-- npm (bundled with Node.js)
+- Node.js 20+
+- npm
 
 ## Setup
 
@@ -51,22 +68,21 @@ npm ci
 npx playwright install --with-deps
 ```
 
-## Running Tests
+## Run Tests
 
-Run full suite:
+### Full Suite
 
 ```bash
 npm test
 ```
 
-Run headed/local debugging:
+Equivalent explicit config command:
 
 ```bash
-npm run e2e:headed
-npm run e2e:ui
+npx playwright test --config=tests/playwright.config.ts
 ```
 
-Run individual specs:
+### Run Each Suite (All Projects)
 
 ```bash
 npm run test:video
@@ -75,38 +91,53 @@ npm run test:anti-cheat
 npm run test:rtl
 ```
 
-Run sequentially (all domains):
-
-```bash
-npm run test:sequential
-```
-
-Chromium-only variants:
+### Run Each Suite (Chromium Only)
 
 ```bash
 npm run test:video:chromium
 npm run test:offline:chromium
 npm run test:anti-cheat:chromium
 npm run test:rtl:chromium
+```
+
+### Sequential Runs
+
+```bash
+npm run test:sequential
 npm run test:sequential:chromium
 ```
 
-Open HTML report:
+### Debug Helpers
 
 ```bash
+npm run e2e:headed
+npm run e2e:ui
 npm run show-report
+```
+
+### List Discovered Tests
+
+```bash
+npx playwright test --list --config=tests/playwright.config.ts
+```
+
+### Update RTL Snapshots
+
+```bash
+npx playwright test tests/specs/rtl-layout.spec.ts --config=tests/playwright.config.ts --update-snapshots
 ```
 
 ## CI
 
-Workflow file: `.github/workflows/playwright-full-suite.yml`
+Workflow file: `.github/workflows/e2e.yml`
 
-Current pipeline behavior:
+Pipeline behavior:
 
-- Triggered on every `push` and manual `workflow_dispatch`
-- Installs dependencies and Playwright browsers
-- Runs full test suite
-- Uploads Playwright HTML report artifact on failure
+- Trigger on every `push`
+- Manual trigger via `workflow_dispatch`
+- Install dependencies and Playwright browsers
+- Run full suite with `tests/playwright.config.ts`
+- Upload HTML report on failure
 
 ## Project Structure
 
@@ -114,16 +145,26 @@ Current pipeline behavior:
 .
 |-- tests/
 |   |-- fixtures/
-|   |   |-- pages/
+|   |   |-- test-data.ts
 |   |-- pages/
+|   |   |-- login.page.ts
+|   |   |-- dashboard.page.ts
+|   |   |-- video-player.page.ts
+|   |   |-- quiz.page.ts
+|   |   |-- chatbot.page.ts
 |   |-- specs/
+|   |   |-- video-playback.spec.ts
+|   |   |-- offline-sync.spec.ts
+|   |   |-- timed-exam.spec.ts
+|   |   |-- rtl-layout.spec.ts
+|   |   |-- rtl-layout.spec.ts-snapshots/
+|   |-- playwright.config.ts
 |-- playwright.config.ts
 |-- package.json
-|-- .github/workflows/playwright-full-suite.yml
+|-- .github/workflows/e2e.yml
 ```
 
 ## Notes
 
-- Some tests depend on external websites (`bitmovin.com`, `careem.com`, and the PWA tester). Internet/network restrictions may affect reliability.
-- Video playback checks include handling for Cloudflare challenge screens and may skip under blocked conditions.
-- Snapshot comparisons for RTL pages are designed for local Windows Chromium runs, not CI.
+- Test comments in specs follow bilingual style (English + Arabic).
+- Root `playwright.config.ts` re-exports `tests/playwright.config.ts`.

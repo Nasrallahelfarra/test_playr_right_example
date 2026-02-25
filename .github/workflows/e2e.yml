@@ -1,18 +1,20 @@
-name: E2E Tests
+name: Playwright E2E
 
 on:
   push:
-    branches:
-      - main
-      - master
-  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  playwright:
+  e2e:
+    name: Run Local-Only Playwright Matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -25,16 +27,16 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps
 
-      - name: Run E2E tests
-        run: npx playwright test --project=chromium
+      - name: Run full Playwright suite
+        run: npx playwright test --config=tests/playwright.config.ts
 
-      - name: Upload Playwright report
+      - name: Upload Playwright HTML report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-html-report
           path: playwright-report/
-          retention-days: 3
-          compression-level: 9
+          if-no-files-found: warn
+          retention-days: 7

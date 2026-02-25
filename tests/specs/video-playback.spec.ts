@@ -1,290 +1,215 @@
-// ─── Imports | الاستيرادات ────────────────────────────────────────────────────
-// Playwright core utilities: expect for assertions, test as the runner.
-// أدوات Playwright الأساسية: expect للتحقق، test لتشغيل الاختبارات.
-import { expect, test } from '@playwright/test';
+// Imports needed for assertions and test runner.
+// الاستيرادات اللازمة للتحقق وتشغيل الاختبارات.
+import { expect, test, type Page } from '@playwright/test';
 
-// Centralised selectors, URLs, timeouts, and mock data shared across all tests.
-// بيانات الاختبار المركزية: المحددات، الروابط، المهلات، والبيانات التجريبية.
-import { testData } from '../fixtures/test-data';
+// Local route installer and shared config values.
+// مُثبت المسارات المحلية وقيم الإعدادات المشتركة.
+import { installLocalEducationalRoutes, testData } from '../fixtures/test-data';
 
-// Page Object Model that wraps every interaction with the Bitmovin video player.
-// نموذج الصفحة الذي يغلّف جميع التفاعلات مع مشغّل Bitmovin.
+// Page objects for login, dashboard navigation, and video player actions.
+// كائنات الصفحات لتسجيل الدخول والتنقل في اللوحة والتحكم بمشغل الفيديو.
+import { DashboardPage } from '../pages/dashboard.page';
+import { LoginPage } from '../pages/login.page';
 import { VideoPlayerPage } from '../pages/video-player.page';
 
-// ─── Test Suite | مجموعة الاختبارات ──────────────────────────────────────────
-// Groups all video-playback tests under one labelled suite.
-// يجمع جميع اختبارات تشغيل الفيديو تحت مجموعة واحدة موسومة.
-test.describe('Bitmovin Stream Test - Video Playback', () => {
-  // Retry up to 2 times in CI; 0 retries locally so failures surface fast.
-  // يُعيد المحاولة مرتين في CI؛ لا إعادة محاولة محليًا حتى تظهر الأخطاء فورًا.
-  test.describe.configure({ retries: process.env.CI ? 2 : 0 });
+// Helper function to navigate to the video lab page.
+// دالة مساعدة للانتقال إلى صفحة مختبر الفيديو.
+// Logs in as the first test student, navigates to dashboard, then opens the video page.
+// تسجل الدخول كأول طالب اختبار، تنتقل إلى اللوحة، ثم تفتح صفحة الفيديو.
+async function openVideoLab(page: Page): Promise<VideoPlayerPage> {
+  // Create instances of all required page objects.
+  // إنشاء نسخ من جميع كائنات الصفحات المطلوبة.
+  const loginPage = new LoginPage(page);
+  const dashboardPage = new DashboardPage(page);
+  const videoPage = new VideoPlayerPage(page);
 
-  // Skip the whole suite on WebKit — Bitmovin MSE/HLS is unreliable there.
-  // تجاوز المجموعة كاملةً على WebKit لأن Bitmovin غير مستقر فيه.
-  test.skip(
-    ({ browserName }) => browserName === 'webkit',
-    'Bitmovin playback checks are unstable on WebKit in this environment.',
-  );
+  // Navigate to login page and authenticate.
+  // الانتقال إلى صفحة تسجيل الدخول والمصادقة.
+  await loginPage.goto();
+  await loginPage.loginAs(testData.students[0].id);
 
-  // ── Test 1: HLS Playback + Al-Fihris Overlay | اختبار تشغيل HLS وتحديث الفهرس ─
-  // Verifies: HLS stream loads, video plays, and Al-Fihris overlay text updates.
-  // يتحقق من: تحميل HLS، تشغيل الفيديو، وتحديث نص طبقة الفهرس أثناء التشغيل.
+  // Wait for dashboard to load, then click video navigation link.
+  // انتظار تحميل اللوحة، ثم النقر على رابط التنقل للفيديو.
+  await dashboardPage.assertLoaded();
+  await dashboardPage.openVideo();
+
+  // Return the video page object for further interactions.
+  // إرجاع كائن صفحة الفيديو لمزيد من التفاعلات.
+  return videoPage;
+}
+
+// ─── Test Suite: Video Player Automation | مجموعة اختبارات: أتمتة مشغل الفيديو ─────────────
+// Tests HLS playback, resume from cached timestamp, and Audio Focus Mode toggle.
+// تختبر تشغيل HLS، الاستئناف من الوقت المحفوظ، وتبديل وضع التركيز الصوتي.
+test.describe('Video Player Automation (Local-Only)', () => {
+  // Install local mock routes before each test to simulate the educational platform.
+  // تثبيت المسارات المحلية الوهمية قبل كل اختبار لمحاكاة منصة التعليم.
+  test.beforeEach(async ({ context }) => {
+    await installLocalEducationalRoutes(context);
+  });
+
+  // Test HLS playback: verify video loads, plays, and Al-Fihris overlay updates.
+  // اختبار تشغيل HLS: التأكد من التحميل والتشغيل وتحديث طبقة الفهرس.
   test('Test HLS playback: verify video loads, plays, and the Al-Fihris overlay updates', async ({
     page,
   }) => {
-    // Create the page object that wraps all player interactions.
-    // إنشاء كائن الصفحة الذي يغلّف جميع تفاعلات المشغّل.
-    const videoPlayerPage = new VideoPlayerPage(page);
+    // Navigate to the video lab page.
+    // الانتقال إلى صفحة مختبر الفيديو.
+    const videoPage = await openVideoLab(page);
 
-    // Navigate to Bitmovin demo with the HLS manifest URL as a query param.
-    // الانتقال إلى صفحة Bitmovin التجريبية مع رابط HLS manifest كمعامل URL.
-    await videoPlayerPage.gotoStreamTest();
+    // Load HLS stream and capture initial Al-Fihris overlay text.
+    // تحميل بث HLS والتقاط نص طبقة الفهرس الأولي.
+    await videoPage.loadHls();
+    const initialOverlay = (await videoPage.readAlFihrisText()).trim();
 
-    // Poll up to 20 s for any Cloudflare JS-challenge to resolve itself.
-    // الانتظار حتى 20 ثانية لحل تحدي Cloudflare تلقائيًا.
-    await videoPlayerPage.waitForCloudflareToSettle();
+    // Start video playback.
+    // بدء تشغيل الفيديو.
+    await videoPage.startPlayback();
 
-    // Skip (not fail) when Cloudflare is still blocking — needs real browser/network.
-    // تجاوز الاختبار بدل فشله إذا استمر Cloudflare في الحجب.
-    test.skip(
-      await videoPlayerPage.isCloudflareChallenge(),
-      'Cloudflare challenge blocked the test environment. Run in headed mode or with a trusted network.',
-    );
+    // Read HTMLVideoElement state via page.evaluate()-based page object API.
+    // قراءة حالة HTMLVideoElement عبر API يعتمد على page.evaluate().
+    const mediaState = await videoPage.getMediaStateViaEvaluate();
 
-    // Dismiss the cookie banner so it does not overlap with player controls.
-    // إغلاق نافذة الموافقة على الكوكيز حتى لا تغطي أزرار المشغّل.
-    await videoPlayerPage.dismissCookieConsentIfPresent();
-
-    // Select the HLS radio button and click "Load" to apply the stream format.
-    // تحديد زر HLS والنقر على "Load" لتطبيق صيغة البث.
-    await videoPlayerPage.ensureHlsSelected();
-
-    // Block until <video> element exists and readyState >= HAVE_CURRENT_DATA (2).
-    // الانتظار حتى يكون عنصر <video> موجودًا وجاهزًا بـ readyState >= 2.
-    await videoPlayerPage.waitForVideoReady();
-
-    // Assert HLS radio is still checked — confirms the correct stream format loaded.
-    // التأكد من أن زر HLS لا يزال محددًا بعد التحميل.
-    await expect(page.locator(testData.selectors.hlsRadio)).toBeChecked();
-
-    // Read the initial Al-Fihris overlay text before playback begins.
-    // قراءة النص الأولي لطبقة الفهرس قبل بدء التشغيل.
-    // Returns { selector, text }; selector is null if the overlay is not rendered.
-    // ترجع { selector, text }؛ selector يكون null إذا لم تكن الطبقة موجودة.
-    const overlayState = await videoPlayerPage.readOverlayText();
-    expect(overlayState.selector).not.toBeNull();
-
-    // Click play and wait until currentTime advances by at least 1.5 s.
-    // النقر على تشغيل والانتظار حتى يتقدم currentTime بـ 1.5 ثانية على الأقل.
-    await videoPlayerPage.startPlayback();
-    await videoPlayerPage.waitForPlaybackProgress();
-
-    // Use page.evaluate() to read the live HTMLVideoElement state from the DOM.
-    // استخدام page.evaluate() لقراءة حالة عنصر الفيديو مباشرةً من DOM.
-    const mediaState = await videoPlayerPage.getMediaState();
-
-    // readyState >= 2 (HAVE_CURRENT_DATA) — player has enough data to play.
-    // readyState >= 2 تعني أن المشغّل لديه بيانات كافية للتشغيل.
+    // Assert video is ready (readyState >= 2 means HAVE_CURRENT_DATA or higher).
+    // التأكد من جاهزية الفيديو (readyState >= 2 يعني HAVE_CURRENT_DATA أو أعلى).
     expect(mediaState.readyState).toBeGreaterThanOrEqual(2);
 
-    // paused === false — video is actively playing, not paused or stalled.
-    // paused === false تعني أن الفيديو يشتغل فعليًا وليس متوقفًا.
+    // Assert video is playing (not paused).
+    // التأكد من أن الفيديو يعمل (غير متوقف).
     expect(mediaState.paused).toBe(false);
 
-    // currentTime > 0 — playback has progressed past the very start.
-    // currentTime > 0 يؤكد أن التشغيل تقدّم فعلًا من بداية الفيديو.
+    // Assert playback has progressed (currentTime > 0).
+    // التأكد من تقدم التشغيل (currentTime > 0).
     expect(mediaState.currentTime).toBeGreaterThan(0);
 
-    // If the overlay was found, poll until its text changes during playback.
-    // إذا وُجدت طبقة الفهرس، انتظر حتى يتغير نصها أثناء التشغيل.
-    if (overlayState.selector) {
-      const updatedText = await videoPlayerPage.waitForOverlayTextChange(
-        overlayState.text,
-        overlayState.selector,
-      );
-      // Updated text must be non-empty — overlay must display a real chapter name.
-      // النص المحدَّث يجب ألا يكون فارغًا — يجب أن يعرض اسم الفصل الفعلي.
-      expect(updatedText.length).toBeGreaterThan(0);
-    }
+    // Wait for Al-Fihris overlay to update (text changes as video plays).
+    // انتظار تحديث طبقة الفهرس (يتغير النص مع تشغيل الفيديو).
+    const updatedOverlay = await videoPage.waitForAlFihrisUpdate(initialOverlay);
+
+    // Assert overlay text has changed.
+    // التأكد من تغير نص الطبقة.
+    expect(updatedOverlay.length).toBeGreaterThan(0);
   });
 
-  // ── Test 2: Resume Playback from Cached Timestamp | استئناف التشغيل من الوقت المحفوظ ─
-  // Plays to 50% of duration, caches the timestamp in localStorage,
-  // navigates away and back, then resumes from the cached position.
-  // يشغّل حتى 50%، يحفظ الوقت في localStorage، يتنقل ويعود، ثم يستأنف من نفس النقطة.
+  // Test resume playback: play to ~50%, navigate away/back, then resume from cached timestamp.
+  // اختبار الاستئناف: تشغيل حتى ~50% ثم التنقل ذهابًا وإيابًا والاستئناف من الوقت المخزن.
   test('Test resume playback: play to 50%, navigate away, return, and resume from cached timestamp', async ({
     page,
   }) => {
-    // Create the page object that wraps all player interactions.
-    // إنشاء كائن الصفحة الذي يغلّف جميع تفاعلات المشغّل.
-    const videoPlayerPage = new VideoPlayerPage(page);
+    // Navigate to video lab and start playback.
+    // الانتقال إلى مختبر الفيديو وبدء التشغيل.
+    const videoPage = await openVideoLab(page);
 
-    // Build the full HLS URL so we can return to the same stream after navigating away.
-    // بناء رابط HLS الكامل للرجوع إلى نفس البث بعد التنقل.
-    const streamUrl = videoPlayerPage.buildHlsUrl();
+    await videoPage.loadHls();
+    await videoPage.startPlayback();
 
-    await videoPlayerPage.gotoStreamTest();
-    await videoPlayerPage.waitForCloudflareToSettle();
+    // Calculate target seek position (50% of duration).
+    // حساب موضع البحث المستهدف (50% من المدة).
+    const beforeSeek = await videoPage.getMediaStateViaEvaluate();
+    const duration = beforeSeek.duration > 0 ? beforeSeek.duration : 10;
+    const target = Math.max(0.5, duration * 0.5);
 
-    // Skip if Cloudflare is still blocking on the initial load.
-    // تجاوز الاختبار إذا كان Cloudflare يحجب عند التحميل الأولي.
-    test.skip(
-      await videoPlayerPage.isCloudflareChallenge(),
-      'Cloudflare challenge blocked the test environment. Run in headed mode or with a trusted network.',
-    );
+    // Seek to 50% of video duration using page.evaluate() to access HTMLVideoElement.
+    // الانتقال إلى 50% من مدة الفيديو باستخدام page.evaluate() للوصول إلى HTMLVideoElement.
+    await page.evaluate((seekTarget) => {
+      const video = document.querySelector<HTMLVideoElement>('video#lesson-video');
+      if (!video) {
+        return;
+      }
+      // Calculate safe seek position (avoid seeking past end).
+      // حساب موضع بحث آمن (تجنب البحث بعد النهاية).
+      const maxSeek = Number.isFinite(video.duration) && video.duration > 0 ? video.duration - 0.05 : seekTarget;
+      video.currentTime = Math.max(0.1, Math.min(seekTarget, maxSeek));
+    }, target);
 
-    await videoPlayerPage.dismissCookieConsentIfPresent();
-    await videoPlayerPage.ensureHlsSelected();
-    await videoPlayerPage.waitForVideoReady();
-    await videoPlayerPage.startPlayback();
-    await videoPlayerPage.waitForPlaybackProgress();
-
-    // Seek the <video> element to exactly 50% of the total stream duration.
-    // تخطي عنصر <video> إلى 50% من المدة الكلية للبث.
-    const halfTarget = await videoPlayerPage.seekToPercentage(0.5);
-
-    // Poll until currentTime is within 3 s of the 50% target (seek confirmation).
-    // الانتظار حتى يصل currentTime إلى ما يقارب نقطة 50% بهامش خطأ 3 ثواني.
+    // Wait for seek to complete.
+    // انتظار اكتمال البحث.
     await expect
-      .poll(async () => (await videoPlayerPage.getMediaState()).currentTime, { timeout: 15_000 })
-      .toBeGreaterThan(halfTarget - 3);
+      .poll(async () => (await videoPage.getMediaStateViaEvaluate()).currentTime)
+      .toBeGreaterThan(target - 0.4);
 
-    // Save the current playback position to localStorage under a known key.
-    // حفظ موضع التشغيل الحالي في localStorage تحت مفتاح معروف.
-    const cachedTimestamp = await videoPlayerPage.cacheCurrentTimestamp(
-      testData.storageKeys.resumeTimestamp,
-    );
-
-    // Cached value must be > 0 — confirms a real playback position was saved.
-    // القيمة المحفوظة يجب أن تكون > 0 لتأكيد حفظ موضع تشغيل حقيقي.
+    // Cache current timestamp to localStorage.
+    // حفظ الوقت الحالي في localStorage.
+    const cachedTimestamp = await videoPage.cacheTimestamp();
     expect(cachedTimestamp).toBeGreaterThan(0);
 
-    // Navigate to example.com (away page) then back to the original stream URL.
-    // الانتقال إلى example.com ثم العودة إلى رابط البث الأصلي.
-    await videoPlayerPage.navigateAwayAndBack(streamUrl);
-    await videoPlayerPage.waitForCloudflareToSettle();
+    // Navigate away to dashboard, then back to video page.
+    // الانتقال إلى اللوحة، ثم العودة إلى صفحة الفيديو.
+    await page.goto(testData.urls.dashboard);
+    await page.goto(testData.urls.video);
 
-    // Skip if Cloudflare blocks again after returning to the page.
-    // تجاوز الاختبار إذا ظهر Cloudflare مجددًا بعد العودة.
-    test.skip(
-      await videoPlayerPage.isCloudflareChallenge(),
-      'Cloudflare challenge blocked the test environment after return navigation.',
+    // Reload HLS and restore cached timestamp to localStorage.
+    // إعادة تحميل HLS واستعادة الوقت المحفوظ إلى localStorage.
+    await videoPage.loadHls();
+    await page.evaluate(
+      ([key, value]) => localStorage.setItem(key, String(value)),
+      [testData.storageKeys.resumeTimestamp, cachedTimestamp] as const,
     );
 
-    await videoPlayerPage.dismissCookieConsentIfPresent();
-    await videoPlayerPage.waitForVideoReady();
+    // Resume playback from cached timestamp.
+    // استئناف التشغيل من الوقت المحفوظ.
+    await videoPage.resumeFromCache();
 
-    // Read the cached timestamp from localStorage and seek the video to that position.
-    // قراءة الوقت المحفوظ من localStorage وتخطي الفيديو إلى ذلك الموضع.
-    const resumedAt = await videoPlayerPage.resumeFromCachedTimestamp(
-      testData.storageKeys.resumeTimestamp,
-    );
-
-    // Verify currentTime is close to the resumed position (2 s tolerance).
-    // التحقق من أن currentTime قريب من الموضع المستأنف بهامش خطأ 2 ثانية.
+    // Assert video resumed near cached timestamp (within 0.6s tolerance).
+    // التأكد من استئناف الفيديو بالقرب من الوقت المحفوظ (ضمن تسامح 0.6 ثانية).
     await expect
-      .poll(async () => (await videoPlayerPage.getMediaState()).currentTime, { timeout: 15_000 })
-      .toBeGreaterThan(resumedAt - 2);
+      .poll(async () => (await videoPage.getMediaStateViaEvaluate()).currentTime)
+      .toBeGreaterThan(cachedTimestamp - 0.6);
 
-    // Take before/after snapshots to confirm playback is still progressing.
-    // أخذ لقطتين قبل وبعد للتأكد من أن الفيديو لا يزال يتقدم بعد الاستئناف.
-    const before = (await videoPlayerPage.getMediaState()).currentTime;
-    await videoPlayerPage.waitForPlaybackProgress(1.0);
-    const after = (await videoPlayerPage.getMediaState()).currentTime;
-    expect(after).toBeGreaterThan(before);
+    // Assert playback continues to progress.
+    // التأكد من استمرار تقدم التشغيل.
+    const progressBefore = (await videoPage.getMediaStateViaEvaluate()).currentTime;
+    await expect
+      .poll(async () => (await videoPage.getMediaStateViaEvaluate()).currentTime)
+      .toBeGreaterThan(progressBefore + 0.5);
   });
 
-  // ── Test 3: Audio Focus Mode Toggle | اختبار وضع التركيز على الصوت ──────────
-  // Enables Audio Focus Mode and verifies:
-  //   - Audio keeps playing (currentTime advances, paused remains false).
-  //   - The video track is disabled OR the player's data-attribute changes.
-  // يفعّل وضع التركيز على الصوت ويتحقق من:
-  //   - استمرار الصوت (currentTime يتقدم، paused=false).
-  //   - تعطيل مسار الفيديو أو تغيّر data-attribute على عنصر المشغّل.
+  // Test Audio Focus toggle: video track logical flag disables while audio/time keeps advancing.
+  // اختبار تبديل Audio Focus: تعطيل المؤشر المنطقي لمسار الفيديو مع استمرار الصوت/الزمن.
   test('Test Audio Focus Mode toggle: assert video track disabled, audio continues, data attribute changes', async ({
     page,
   }) => {
-    // Create the page object that wraps all player interactions.
-    // إنشاء كائن الصفحة الذي يغلّف جميع تفاعلات المشغّل.
-    const videoPlayerPage = new VideoPlayerPage(page);
-    await videoPlayerPage.gotoStreamTest();
-    await videoPlayerPage.waitForCloudflareToSettle();
+    // Navigate to video lab and start playback.
+    // الانتقال إلى مختبر الفيديو وبدء التشغيل.
+    const videoPage = await openVideoLab(page);
 
-    // Skip if Cloudflare is blocking the page.
-    // تجاوز إذا كان Cloudflare يحجب الصفحة.
-    test.skip(
-      await videoPlayerPage.isCloudflareChallenge(),
-      'Cloudflare challenge blocked the test environment. Run in headed mode or with a trusted network.',
-    );
+    // Load HLS stream and start playback.
+    // تحميل بث HLS وبدء التشغيل.
+    await videoPage.loadHls();
+    await videoPage.startPlayback();
 
-    await videoPlayerPage.dismissCookieConsentIfPresent();
-    await videoPlayerPage.waitForVideoReady();
-    await videoPlayerPage.startPlayback();
-    await videoPlayerPage.waitForPlaybackProgress();
+    // Simulate buffering to ensure video is ready.
+    // محاكاة التخزين المؤقت للتأكد من جاهزية الفيديو.
+    await videoPage.simulateBuffering();
 
-    // Try each candidate selector in order until one is found in the DOM.
-    // جرب كل محدد مرشح بالترتيب حتى يُعثر على أحدها في DOM.
-    const toggleSelector = await videoPlayerPage.resolveFirstExistingSelector(
-      testData.selectors.audioFocusToggleCandidates,
-    );
+    // Capture media state before toggling Audio Focus Mode.
+    // التقاط حالة الوسائط قبل تبديل وضع التركيز الصوتي.
+    const beforeToggle = await videoPage.getMediaStateViaEvaluate();
 
-    // Skip this test if the toggle button is absent in the current environment.
-    // تجاوز الاختبار إذا لم يكن زر التبديل موجودًا في هذه البيئة.
-    test.skip(
-      !toggleSelector,
-      'Audio Focus Mode toggle selector is not present on this environment. Provide a valid selector in tests/fixtures/test-data.ts.',
-    );
+    // Toggle Audio Focus Mode (disables video track, keeps audio playing).
+    // تبديل وضع التركيز الصوتي (يعطل مسار الفيديو، يبقي الصوت يعمل).
+    await videoPage.toggleAudioFocus();
 
-    // The name of the data-attribute that signals Audio Focus Mode is active.
-    // اسم data-attribute الذي يُشير إلى تفعيل وضع التركيز على الصوت.
-    const dataAttributeName = testData.audioFocus.dataAttribute;
+    // Wait for Audio Focus Mode to be enabled.
+    // انتظار تفعيل وضع التركيز الصوتي.
+    await expect
+      .poll(async () => (await videoPage.getMediaStateViaEvaluate()).audioFocusMode)
+      .toBe('enabled');
 
-    // Capture the player's data-* attributes and media state BEFORE toggling.
-    // تسجيل data-* attributes وحالة الوسائط على المشغّل قبل التبديل.
-    const beforeAttributes = await videoPlayerPage.capturePlayerDataAttributes();
-    const beforeState = await videoPlayerPage.getMediaState();
+    // Capture media state after toggling.
+    // التقاط حالة الوسائط بعد التبديل.
+    const afterToggle = await videoPage.getMediaStateViaEvaluate();
 
-    // Click the toggle button to activate Audio Focus Mode.
-    // النقر على زر التبديل لتفعيل وضع التركيز على الصوت.
-    await page.locator(toggleSelector!).first().click();
+    // Assert video track is logically disabled.
+    // التأكد من تعطيل مسار الفيديو منطقيًا.
+    expect(afterToggle.logicalVideoTrackEnabled).toBe(false);
 
-    // Wait 1.5 s so the player has time to process and apply the mode change.
-    // انتظار 1.5 ثانية لإتاحة الوقت للمشغّل لمعالجة تغيير الوضع وتطبيقه.
-    await page.waitForTimeout(1_500);
+    // Assert playback time has advanced (audio continues).
+    // التأكد من تقدم وقت التشغيل (الصوت مستمر).
+    expect(afterToggle.currentTime).toBeGreaterThan(beforeToggle.currentTime);
 
-    // Capture attributes and media state AFTER the toggle.
-    // تسجيل attributes والحالة بعد التبديل.
-    const afterAttributes = await videoPlayerPage.capturePlayerDataAttributes();
-    const afterState = await videoPlayerPage.getMediaState();
-
-    // Audio must still be running: currentTime progressed and video is not paused.
-    // يجب أن يستمر الصوت: currentTime تقدّم والفيديو ليس متوقفًا.
-    expect(afterState.currentTime).toBeGreaterThan(beforeState.currentTime);
-    expect(afterState.paused).toBe(false);
-
-    // Determine which assertion path is available on this specific player build.
-    // تحديد أي مسار تحقق متاح في هذا الإصدار من المشغّل.
-    const hasTrackApi = afterState.videoTrackEnabled !== null;
-    const hasFocusDataAttribute =
-      dataAttributeName in beforeAttributes || dataAttributeName in afterAttributes;
-
-    // Skip if neither VideoTracks API nor a data-attribute is exposed by the player.
-    // تجاوز إذا لم تكن VideoTracks API ولا data-attribute متاحَين في المشغّل.
-    test.skip(
-      !hasTrackApi && !hasFocusDataAttribute,
-      'Cannot assert video-track disablement on this player: no videoTracks API and no audio-focus data attribute.',
-    );
-
-    // Path A: browser exposes VideoTracks API — assert the video track is disabled.
-    // المسار أ: المتصفح يدعم VideoTracks API — تأكد من تعطيل مسار الفيديو.
-    if (hasTrackApi) {
-      expect(afterState.videoTrackEnabled).toBe(false);
-    }
-
-    // Path B: player uses a data-attribute for Audio Focus — assert it changed.
-    // المسار ب: المشغّل يستخدم data-attribute لوضع التركيز — تأكد من تغيير قيمته.
-    if (hasFocusDataAttribute) {
-      expect(afterAttributes[dataAttributeName]).not.toEqual(beforeAttributes[dataAttributeName]);
-    }
+    // Assert video is still playing (not paused).
+    // التأكد من أن الفيديو لا يزال يعمل (غير متوقف).
+    expect(afterToggle.paused).toBe(false);
   });
 });
