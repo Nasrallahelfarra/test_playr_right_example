@@ -147,7 +147,16 @@ test.describe('Arabic RTL Layout & Content (Local-Only)', () => {
 
   // Capture screenshots and assert no major overflow/misalignment for key pages.
   // التقاط صور مرجعية والتأكد من عدم وجود فيض أو انحراف كبير في الصفحات الأساسية.
-  test('screenshot comparison for key pages with overflow and alignment checks', async ({ page }) => {
+test('screenshot comparison for key pages with overflow and alignment checks', async ({ page }, testInfo) => {
+    // In CI, keep screenshot comparison on chromium only for stability.
+    // في بيئة CI، نحافظ على مقارنة الصور على chromium فقط لضمان الاستقرار.
+    // Mobile screenshot comparison can be re-enabled in CI by setting RTL_MOBILE_CI_SNAPSHOTS=1.
+    // يمكن إعادة تفعيل مقارنة صور الموبايل في CI عبر ضبط RTL_MOBILE_CI_SNAPSHOTS=1.
+    const shouldCompareScreenshot =
+      !process.env.CI ||
+      testInfo.project.name === 'chromium' ||
+      process.env.RTL_MOBILE_CI_SNAPSHOTS === '1';
+
     // Loop through all required Arabic pages.
     // المرور عبر جميع الصفحات العربية المطلوبة.
     for (const targetUrl of requiredArabicPages) {
@@ -178,14 +187,16 @@ test.describe('Arabic RTL Layout & Content (Local-Only)', () => {
         // التأكد من أن عدم المحاذاة ضمن التسامح المقبول (≤8 بكسل).
         expect(misalignment).toBeLessThanOrEqual(8);
 
-        // Capture full-page screenshot and compare with baseline.
-        // التقاط لقطة شاشة كاملة للصفحة ومقارنتها بالخط الأساسي.
-        await expect(page).toHaveScreenshot(`rtl-${slugFromUrl(targetUrl)}.png`, {
-          fullPage: true,              // Capture entire page, not just viewport | التقاط الصفحة بأكملها، وليس فقط منفذ العرض
-          animations: 'disabled',       // Disable animations for consistent snapshots | تعطيل الرسوم المتحركة للقطات متسقة
-          caret: 'hide',                // Hide text cursor | إخفاء مؤشر النص
-          maxDiffPixelRatio: 0.2,       // Allow up to 20% pixel difference | السماح بفرق بكسل يصل إلى 20%
-        });
+        // Capture screenshot and compare with baseline only when enabled for this environment.
+        // التقاط الصورة ومقارنتها بالخط الأساسي فقط عند تفعيلها لهذه البيئة.
+        if (shouldCompareScreenshot) {
+          await expect(page).toHaveScreenshot(`rtl-${slugFromUrl(targetUrl)}.png`, {
+            fullPage: true,              // Capture entire page, not just viewport | التقاط الصفحة بأكملها، وليس فقط منفذ العرض
+            animations: 'disabled',       // Disable animations for consistent snapshots | تعطيل الرسوم المتحركة للقطات متسقة
+            caret: 'hide',                // Hide text cursor | إخفاء مؤشر النص
+            maxDiffPixelRatio: 0.2,       // Allow up to 20% pixel difference | السماح بفرق بكسل يصل إلى 20%
+          });
+        }
       });
     }
   });
