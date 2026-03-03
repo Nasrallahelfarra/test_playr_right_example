@@ -947,6 +947,17 @@ function createExamPage(): string {
           <strong>Visibility Flags:</strong>
           <span id="visibility-flags" class="pill idle">0</span>
         </div>
+        <section class="card" style="margin-bottom: 10px;">
+          <h2>Question 1</h2>
+          <p>Which stream format is adaptive by default?</p>
+          <form id="exam-form">
+            <label><input data-testid="exam-answer-option" type="radio" name="exam-answer" value="HLS"> HLS</label><br>
+            <label><input data-testid="exam-answer-option" type="radio" name="exam-answer" value="MP4"> MP4</label><br>
+            <label><input data-testid="exam-answer-option" type="radio" name="exam-answer" value="WAV"> WAV</label><br><br>
+            <button id="submit-exam-answer" type="submit">Submit Question</button>
+          </form>
+          <p id="answer-result" class="pill idle" data-state="unanswered" style="margin-top: 10px;">unanswered</p>
+        </section>
         <ol id="event-log" class="card" style="margin: 0; padding: 12px 24px;"></ol>
       </main>
     `,
@@ -975,6 +986,10 @@ function createExamPage(): string {
           var visibilityFlagsEl = document.getElementById('visibility-flags');
           var eventLog = document.getElementById('event-log');
           var examMeta = document.getElementById('exam-meta');
+          var examForm = document.getElementById('exam-form');
+          var answerResult = document.getElementById('answer-result');
+          var answerLockedByVisibility = false;
+          var correctAnswer = 'HLS';
 
           function formatRemaining(ms) {
             var totalSeconds = Math.max(0, Math.ceil(ms / 1000));
@@ -993,6 +1008,36 @@ function createExamPage(): string {
             submissionState.dataset.state = next;
             submissionState.textContent = next;
             submissionState.className = 'pill ' + (next === 'auto-submitted' ? 'synced' : 'queued');
+          }
+
+          function setAnswerResult(next, message) {
+            answerResult.dataset.state = next;
+            answerResult.textContent = message;
+
+            var tone = 'idle';
+            if (next === 'correct') {
+              tone = 'online';
+            } else if (next === 'wrong') {
+              tone = 'offline';
+            }
+            answerResult.className = 'pill ' + tone;
+          }
+
+          function gradeSelectedAnswer(answer) {
+            if (answerLockedByVisibility) {
+              setAnswerResult('wrong', 'wrong (visibility-change violation)');
+              addLog('Answer marked wrong due to visibilitychange policy.');
+              return;
+            }
+
+            if (answer === correctAnswer) {
+              setAnswerResult('correct', 'correct');
+              addLog('Answer accepted as correct.');
+              return;
+            }
+
+            setAnswerResult('wrong', 'wrong');
+            addLog('Answer submitted as wrong.');
           }
 
           function markSubmitted() {
@@ -1017,12 +1062,24 @@ function createExamPage(): string {
 
           document.addEventListener('visibilitychange', function () {
             visibilityFlags += 1;
+            answerLockedByVisibility = true;
             localStorage.setItem(flagKey, String(visibilityFlags));
             visibilityFlagsEl.textContent = String(visibilityFlags);
             addLog('visibilitychange detected (hidden=' + String(document.hidden) + ').');
           });
 
+          examForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var selected = examForm.querySelector('input[name="exam-answer"]:checked');
+            if (!selected) {
+              addLog('Answer submit ignored (no option selected).');
+              return;
+            }
+            gradeSelectedAnswer(selected.value);
+          });
+
           setSubmissionState(submitted ? 'auto-submitted' : 'pending');
+          setAnswerResult('unanswered', 'unanswered');
           visibilityFlagsEl.textContent = String(visibilityFlags);
           examMeta.textContent = 'Exam ID: ' + examId + ' | Duration (ms): ' + durationMs + ' | Start (epoch): ' + startEpochMs;
 
@@ -1032,6 +1089,12 @@ function createExamPage(): string {
             startEpochMs: startEpochMs,
             getRemainingMs: function () {
               return Number(countdown.dataset.remainingMs || '0');
+            },
+            getAnswerState: function () {
+              return String(answerResult.dataset.state || 'unanswered');
+            },
+            isAnswerLocked: function () {
+              return answerLockedByVisibility;
             }
           };
 

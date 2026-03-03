@@ -87,6 +87,36 @@ test.describe('Timed Exam Anti-Cheat (Local-Only)', () => {
     await expect(page.locator('#event-log')).toContainText('visibilitychange detected');
   });
 
+  // Simulate tab switch, then submit the correct option and assert it is forced to wrong.
+  // محاكاة تبديل التبويب ثم إرسال الإجابة الصحيحة والتأكد أنها تُحتسب خطأ.
+  test('answer is marked wrong after tab switch even if correct option is selected', async ({ page }) => {
+    // Generate unique exam ID.
+    // إنشاء معرف امتحان فريد.
+    const examId = `answer-penalty-${Date.now()}`;
+
+    // Navigate to exam page with enough time for interactions.
+    // الانتقال إلى صفحة الامتحان بمدة كافية للتفاعل.
+    await page.goto(buildExamUrl(examId, 20_000));
+
+    // Select the correct answer option before submitting.
+    // اختيار الإجابة الصحيحة قبل الإرسال.
+    await page.locator('input[name="exam-answer"][value="HLS"]').check();
+
+    // Simulate user leaving exam tab via visibilitychange.
+    // محاكاة خروج المستخدم من تبويب الامتحان عبر visibilitychange.
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+    // Submit selected answer.
+    // إرسال الإجابة المختارة.
+    await page.locator('#submit-exam-answer').click();
+
+    // Assert answer result is forced to wrong due to anti-cheat visibility policy.
+    // التأكد أن نتيجة الإجابة أصبحت خطأ بسبب سياسة مكافحة الغش.
+    await expect(page.locator('#answer-result')).toHaveAttribute('data-state', 'wrong');
+    await expect(page.locator('#answer-result')).toContainText('wrong');
+    await expect(page.locator('#event-log')).toContainText('Answer marked wrong due to visibilitychange policy.');
+  });
+
   // Close and reopen page with same examId, timer must continue from persisted start epoch.
   // إغلاق وإعادة فتح الصفحة بنفس examId ويجب أن يستمر المؤقت من وقت البداية المحفوظ.
   test('close/reopen keeps timer anchored to server-side start time', async ({
